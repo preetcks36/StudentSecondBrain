@@ -8,65 +8,71 @@ import ResetPassword from './ResetPassword'
 import './App.css'
 
 function App() {
- const [page, setPage] = useState('dashboard')
-const [user, setUser] = useState(null)
-const [isPasswordRecovery, setIsPasswordRecovery] = useState(false)
-const [authReady, setAuthReady] = useState(false)
+  const [page, setPage] = useState('dashboard')
+  const [sidebarOpen, setSidebarOpen] = useState(false)
+  const [user, setUser] = useState(null)
+  const [isPasswordRecovery, setIsPasswordRecovery] = useState(false)
+  const [authReady, setAuthReady] = useState(false)
+
   const [notes, setNotes] = useState([])
+  const [subjects, setSubjects] = useState([])
+  const [documentCount, setDocumentCount] = useState(0)
+
   const [title, setTitle] = useState('')
   const [content, setContent] = useState('')
   const [editingId, setEditingId] = useState(null)
-  const [subjects, setSubjects] = useState([])
   const [selectedSubjectId, setSelectedSubjectId] = useState('')
 
   useEffect(() => {
-  let active = true
+    let active = true
 
-  const {
-    data: { subscription },
-  } = supabase.auth.onAuthStateChange((event, session) => {
-    if (!active) return
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((event, session) => {
+      if (!active) return
 
-    if (event === 'PASSWORD_RECOVERY') {
-      setIsPasswordRecovery(true)
+      if (event === 'PASSWORD_RECOVERY') {
+        setIsPasswordRecovery(true)
+        setUser(session?.user ?? null)
+        setAuthReady(true)
+      } else if (
+        event === 'SIGNED_IN' ||
+        event === 'INITIAL_SESSION' ||
+        event === 'TOKEN_REFRESHED'
+      ) {
+        setUser(session?.user ?? null)
+        setAuthReady(true)
+      } else if (event === 'SIGNED_OUT') {
+        setUser(null)
+        setIsPasswordRecovery(false)
+        setAuthReady(true)
+      }
+    })
+
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (!active) return
+
       setUser(session?.user ?? null)
       setAuthReady(true)
-    } else if (
-      event === 'SIGNED_IN' ||
-      event === 'INITIAL_SESSION' ||
-      event === 'TOKEN_REFRESHED'
-    ) {
-      setUser(session?.user ?? null)
-      setAuthReady(true)
-    } else if (event === 'SIGNED_OUT') {
-      setUser(null)
-      setIsPasswordRecovery(false)
-      setAuthReady(true)
+    })
+
+    return () => {
+      active = false
+      subscription.unsubscribe()
     }
-  })
+  }, [])
 
-  supabase.auth.getSession().then(({ data: { session } }) => {
-    if (!active) return
-
-    setUser(session?.user ?? null)
-    setAuthReady(true)
-  })
-
-  return () => {
-    active = false
-    subscription.unsubscribe()
-  }
-}, [])
-
-useEffect(() => {
-  if (user) {
-    loadNotes()
-    loadSubjects()
-  } else {
-    setNotes([])
-    setSubjects([])
-  }
-}, [user])
+  useEffect(() => {
+    if (user) {
+      loadNotes()
+      loadSubjects()
+      loadDocumentCount()
+    } else {
+      setNotes([])
+      setSubjects([])
+      setDocumentCount(0)
+    }
+  }, [user])
 
   async function loadSubjects() {
     const { data, error } = await supabase
@@ -96,6 +102,23 @@ useEffect(() => {
     setNotes(data || [])
   }
 
+  async function loadDocumentCount() {
+    const { count, error } = await supabase
+      .from('documents')
+      .select('*', { count: 'exact', head: true })
+
+    if (!error) {
+      setDocumentCount(count || 0)
+    }
+  }
+
+  function resetNoteForm() {
+    setEditingId(null)
+    setTitle('')
+    setContent('')
+    setSelectedSubjectId('')
+  }
+
   async function addNote() {
     if (title.trim() === '' || content.trim() === '') {
       alert('Please enter both title and content.')
@@ -106,8 +129,8 @@ useEffect(() => {
       .from('notes')
       .insert([
         {
-          title,
-          content,
+          title: title.trim(),
+          content: content.trim(),
           user_id: user.id,
           subject_id: selectedSubjectId || null,
         },
@@ -120,9 +143,7 @@ useEffect(() => {
     }
 
     setNotes([data[0], ...notes])
-    setTitle('')
-    setContent('')
-    setSelectedSubjectId('')
+    resetNoteForm()
   }
 
   async function deleteNote(id) {
@@ -134,6 +155,10 @@ useEffect(() => {
     if (error) {
       alert(error.message)
       return
+    }
+
+    if (editingId === id) {
+      resetNoteForm()
     }
 
     setNotes(notes.filter((note) => note.id !== id))
@@ -148,8 +173,8 @@ useEffect(() => {
     const { data, error } = await supabase
       .from('notes')
       .update({
-        title,
-        content,
+        title: title.trim(),
+        content: content.trim(),
         subject_id: selectedSubjectId || null,
       })
       .eq('id', editingId)
@@ -166,10 +191,7 @@ useEffect(() => {
       )
     )
 
-    setEditingId(null)
-    setTitle('')
-    setContent('')
-    setSelectedSubjectId('')
+    resetNoteForm()
   }
 
   async function logout() {
@@ -179,6 +201,11 @@ useEffect(() => {
 
   function navigate(target) {
     setPage(target)
+    setSidebarOpen(false)
+    if (target === 'dashboard') {
+      loadDocumentCount()
+      loadSubjects()
+    }
     window.scrollTo({
       top: 0,
       behavior: 'smooth',
@@ -186,64 +213,52 @@ useEffect(() => {
   }
 
   if (!authReady) {
-  return (
-    <div className="login-page">
-      <div className="login-box">
-        <p>Loading your workspace...</p>
+    return (
+      <div className="login-page">
+        <div className="login-box">
+          <div className="login-logo">🧠</div>
+          <p>Loading your workspace...</p>
+        </div>
       </div>
-    </div>
-  )
-}
+    )
+  }
 
-if (isPasswordRecovery) {
-  return <ResetPassword />
-}
+  if (isPasswordRecovery) {
+    return <ResetPassword />
+  }
 
-if (!user) {
-  return <Login />
-}
+  if (!user) {
+    return <Login />
+  }
 
   const userName =
     user.email?.split('@')[0] || 'Student'
 
   return (
     <div className="app">
+      {/* Mobile Sidebar Backdrop */}
+      <div
+        className={`sidebar-backdrop ${sidebarOpen ? 'open' : ''}`}
+        onClick={() => setSidebarOpen(false)}
+      />
 
       {/* ================================= */}
       {/* SIDEBAR */}
       {/* ================================= */}
-
-      <aside className="sidebar">
-
+      <aside className={`sidebar ${sidebarOpen ? 'open' : ''}`}>
         <div className="brand">
-
-          <div className="brand-icon">
-            🧠
-          </div>
-
+          <div className="brand-icon">🧠</div>
           <div>
-            <div className="brand-name">
-              Student
-            </div>
-
-            <div className="brand-subtitle">
-              Second Brain
-            </div>
+            <div className="brand-name">Student</div>
+            <div className="brand-subtitle">Second Brain</div>
           </div>
-
         </div>
 
-
         <div className="sidebar-section">
-
-          <div className="sidebar-label">
-            WORKSPACE
-          </div>
+          <div className="sidebar-label">WORKSPACE</div>
 
           <button
-            className={`nav-item ${
-              page === 'dashboard' ? 'active' : ''
-            }`}
+            className={`nav-item ${page === 'dashboard' ? 'active' : ''}`}
             onClick={() => navigate('dashboard')}
           >
             <span>⌂</span>
@@ -251,144 +266,102 @@ if (!user) {
           </button>
 
           <button
-            className={`nav-item ${
-              page === 'notes' ? 'active' : ''
-            }`}
+            className={`nav-item ${page === 'notes' ? 'active' : ''}`}
             onClick={() => navigate('notes')}
           >
             <span>✎</span>
             My Notes
-
-            <span className="nav-count">
-              {notes.length}
-            </span>
+            <span className="nav-count">{notes.length}</span>
           </button>
 
           <button
-            className={`nav-item ${
-              page === 'subjects' ? 'active' : ''
-            }`}
+            className={`nav-item ${page === 'subjects' ? 'active' : ''}`}
             onClick={() => navigate('subjects')}
           >
             <span>▦</span>
             Subjects
-
-            <span className="nav-count">
-              {subjects.length}
-            </span>
+            <span className="nav-count">{subjects.length}</span>
           </button>
 
           <button
-            className={`nav-item ${
-              page === 'documents' ? 'active' : ''
-            }`}
+            className={`nav-item ${page === 'documents' ? 'active' : ''}`}
             onClick={() => navigate('documents')}
           >
             <span>▤</span>
             Documents
+            <span className="nav-count">{documentCount}</span>
           </button>
-
         </div>
 
-
         <div className="sidebar-section">
-
-          <div className="sidebar-label">
-            INTELLIGENCE
-          </div>
+          <div className="sidebar-label">INTELLIGENCE</div>
 
           <button
-            className={`nav-item ai-nav ${
-              page === 'ai' ? 'active' : ''
-            }`}
+            className={`nav-item ai-nav ${page === 'ai' ? 'active' : ''}`}
             onClick={() => navigate('ai')}
           >
             <span>✦</span>
             AI Assistant
-
-            <span className="ai-badge">
-              AI
-            </span>
+            <span className="ai-badge">AI</span>
           </button>
-
         </div>
 
-
-        <div className="sidebar-spacer"></div>
-
+        <div className="sidebar-spacer" />
 
         <div className="sidebar-user">
-
           <div className="avatar">
             {userName.charAt(0).toUpperCase()}
           </div>
 
           <div className="user-info">
-
-            <strong>
-              {userName}
-            </strong>
-
-            <span>
-              Personal workspace
-            </span>
-
+            <strong>{userName}</strong>
+            <span>Personal workspace</span>
           </div>
 
           <button
             className="logout-button"
             onClick={logout}
             title="Logout"
+            aria-label="Logout"
           >
             ↪
           </button>
-
         </div>
-
       </aside>
-
 
       {/* ================================= */}
       {/* MAIN AREA */}
       {/* ================================= */}
-
       <div className="main-area">
-
         {/* Top bar */}
-
         <header className="topbar">
+          <button
+            className="mobile-menu-btn"
+            onClick={() => setSidebarOpen(true)}
+            aria-label="Open navigation menu"
+          >
+            ☰
+          </button>
 
           <div className="topbar-mobile-brand">
             🧠 Student Second Brain
           </div>
 
-          <div className="topbar-spacer"></div>
+          <div className="topbar-spacer" />
 
           <div className="topbar-user">
-
-            <div className="online-dot"></div>
-
-            <span>
-              {user.email}
-            </span>
-
+            <div className="online-dot" />
+            <span>{user.email}</span>
           </div>
-
         </header>
-
 
         {/* ================================= */}
         {/* DASHBOARD */}
         {/* ================================= */}
-
         {page === 'dashboard' && (
-
           <main className="dashboard">
-
             <section className="hero">
-
               <div className="hero-content">
-
                 <div className="eyebrow">
                   YOUR PERSONAL KNOWLEDGE SYSTEM
                 </div>
@@ -396,19 +369,15 @@ if (!user) {
                 <h1>
                   Think better.
                   <br />
-                  <span>
-                    Learn deeper.
-                  </span>
+                  <span>Learn deeper.</span>
                 </h1>
 
                 <p>
-                  Your notes, subjects, documents and AI
-                  assistant — all connected in one intelligent
-                  study space.
+                  Your notes, subjects, documents and AI assistant — all
+                  connected in one intelligent study space.
                 </p>
 
                 <div className="hero-actions">
-
                   <button
                     className="primary-button"
                     onClick={() => navigate('notes')}
@@ -424,20 +393,13 @@ if (!user) {
                     <span>✦</span>
                     Ask your AI
                   </button>
-
                 </div>
-
               </div>
 
-
               <div className="hero-visual">
-
-                <div className="brain-orbit orbit-one"></div>
-                <div className="brain-orbit orbit-two"></div>
-
-                <div className="brain-glow">
-                  🧠
-                </div>
+                <div className="brain-orbit orbit-one" />
+                <div className="brain-orbit orbit-two" />
+                <div className="brain-glow">🧠</div>
 
                 <div className="floating-card floating-one">
                   <span>✦</span>
@@ -448,124 +410,66 @@ if (!user) {
                   <span>✓</span>
                   Knowledge organized
                 </div>
-
               </div>
-
             </section>
 
-
             {/* Stats */}
-
             <section className="stats-grid">
-
-              <div className="stat-card">
-
-                <div className="stat-icon notes-icon">
-                  ✎
-                </div>
-
+              <div
+                className="stat-card ai-stat"
+                onClick={() => navigate('notes')}
+              >
+                <div className="stat-icon notes-icon">✎</div>
                 <div>
-                  <span className="stat-label">
-                    NOTES
-                  </span>
-
-                  <strong>
-                    {notes.length}
-                  </strong>
-
-                  <p>
-                    Knowledge entries
-                  </p>
+                  <span className="stat-label">NOTES</span>
+                  <strong>{notes.length}</strong>
+                  <p>Knowledge entries</p>
                 </div>
-
               </div>
 
-
-              <div className="stat-card">
-
-                <div className="stat-icon subject-icon">
-                  ▦
-                </div>
-
+              <div
+                className="stat-card ai-stat"
+                onClick={() => navigate('subjects')}
+              >
+                <div className="stat-icon subject-icon">▦</div>
                 <div>
-                  <span className="stat-label">
-                    SUBJECTS
-                  </span>
-
-                  <strong>
-                    {subjects.length}
-                  </strong>
-
-                  <p>
-                    Areas of learning
-                  </p>
+                  <span className="stat-label">SUBJECTS</span>
+                  <strong>{subjects.length}</strong>
+                  <p>Areas of learning</p>
                 </div>
-
               </div>
 
-
-              <div className="stat-card">
-
-                <div className="stat-icon document-icon">
-                  ▤
-                </div>
-
+              <div
+                className="stat-card ai-stat"
+                onClick={() => navigate('documents')}
+              >
+                <div className="stat-icon document-icon">▤</div>
                 <div>
-                  <span className="stat-label">
-                    DOCUMENTS
-                  </span>
-
-                  <strong>
-                    —
-                  </strong>
-
-                  <p>
-                    Study material
-                  </p>
+                  <span className="stat-label">DOCUMENTS</span>
+                  <strong>{documentCount}</strong>
+                  <p>Study material</p>
                 </div>
-
               </div>
-
 
               <div
                 className="stat-card ai-stat"
                 onClick={() => navigate('ai')}
               >
-
-                <div className="stat-icon ai-icon">
-                  ✦
-                </div>
-
+                <div className="stat-icon ai-icon">✦</div>
                 <div>
-                  <span className="stat-label">
-                    AI BRAIN
-                  </span>
-
-                  <strong>
-                    Ready
-                  </strong>
-
-                  <p>
-                    Ask your knowledge base
-                  </p>
+                  <span className="stat-label">AI BRAIN</span>
+                  <strong>Ready</strong>
+                  <p>Ask your knowledge base</p>
                 </div>
-
               </div>
-
             </section>
 
-
             {/* AI Hero Card */}
-
             <section
               className="ai-hero-card"
               onClick={() => navigate('ai')}
             >
-
-              <div className="ai-hero-glow"></div>
-
               <div className="ai-hero-content">
-
                 <div className="ai-hero-label">
                   <span>✦</span>
                   YOUR SECOND BRAIN IS READY
@@ -578,133 +482,74 @@ if (!user) {
                 </h2>
 
                 <p>
-                  Your documents are transformed into
-                  searchable knowledge. Ask a question and
-                  let your AI assistant find the answer.
+                  Your documents are transformed into searchable knowledge. Ask
+                  a question and let your AI assistant find the answer.
                 </p>
 
-                <button className="ai-hero-button">
+                <button className="ai-hero-button" type="button">
                   Open AI Assistant
                   <span>→</span>
                 </button>
-
               </div>
 
-              <div className="ai-hero-symbol">
-                ✦
-              </div>
-
+              <div className="ai-hero-symbol">✦</div>
             </section>
 
-
             {/* Quick access */}
-
             <section className="dashboard-section">
-
               <div className="section-heading">
-
                 <div>
-                  <span>
-                    QUICK ACCESS
-                  </span>
-
-                  <h2>
-                    Your knowledge space
-                  </h2>
+                  <span>QUICK ACCESS</span>
+                  <h2>Your knowledge space</h2>
                 </div>
-
               </div>
 
-
               <div className="quick-grid">
-
                 <button
                   className="quick-card"
                   onClick={() => navigate('notes')}
                 >
-                  <div className="quick-icon">
-                    ✎
-                  </div>
-
+                  <div className="quick-icon">✎</div>
                   <div>
-                    <strong>
-                      My Notes
-                    </strong>
-
-                    <p>
-                      Write and organize ideas
-                    </p>
+                    <strong>My Notes</strong>
+                    <p>Write and organize ideas</p>
                   </div>
-
-                  <span className="quick-arrow">
-                    →
-                  </span>
+                  <span className="quick-arrow">→</span>
                 </button>
-
 
                 <button
                   className="quick-card"
                   onClick={() => navigate('subjects')}
                 >
-                  <div className="quick-icon">
-                    ▦
-                  </div>
-
+                  <div className="quick-icon">▦</div>
                   <div>
-                    <strong>
-                      Subjects
-                    </strong>
-
-                    <p>
-                      Organize your learning
-                    </p>
+                    <strong>Subjects</strong>
+                    <p>Organize your learning</p>
                   </div>
-
-                  <span className="quick-arrow">
-                    →
-                  </span>
+                  <span className="quick-arrow">→</span>
                 </button>
-
 
                 <button
                   className="quick-card"
                   onClick={() => navigate('documents')}
                 >
-                  <div className="quick-icon">
-                    ▤
-                  </div>
-
+                  <div className="quick-icon">▤</div>
                   <div>
-                    <strong>
-                      Documents
-                    </strong>
-
-                    <p>
-                      Access your study PDFs
-                    </p>
+                    <strong>Documents</strong>
+                    <p>Access your study PDFs</p>
                   </div>
-
-                  <span className="quick-arrow">
-                    →
-                  </span>
+                  <span className="quick-arrow">→</span>
                 </button>
-
               </div>
-
             </section>
-
           </main>
         )}
-
 
         {/* ================================= */}
         {/* NOTES */}
         {/* ================================= */}
-
         {page === 'notes' && (
-
           <main className="notes-page">
-
             <button
               className="back-button"
               onClick={() => navigate('dashboard')}
@@ -712,199 +557,129 @@ if (!user) {
               ← Dashboard
             </button>
 
-
             <div className="page-heading">
-
               <div>
-
-                <span className="page-eyebrow">
-                  KNOWLEDGE SPACE
-                </span>
-
-                <h1>
-                  My Notes
-                </h1>
-
+                <span className="page-eyebrow">KNOWLEDGE SPACE</span>
+                <h1>My Notes</h1>
                 <p>
-                  Capture ideas, concepts and things worth
-                  remembering.
+                  Capture ideas, concepts and things worth remembering.
                 </p>
-
               </div>
 
               <div className="page-count">
                 {notes.length}
-                <span>
-                  notes
-                </span>
+                <span>notes</span>
               </div>
-
             </div>
 
-
             <section className="note-editor">
-
               <div className="editor-title">
-
                 <div className="editor-icon">
                   {editingId ? '✎' : '＋'}
                 </div>
 
                 <div>
                   <h2>
-                    {editingId
-                      ? 'Edit your note'
-                      : 'Create a new note'}
+                    {editingId ? 'Edit your note' : 'Create a new note'}
                   </h2>
-
                   <p>
-                    Turn your thoughts into searchable
-                    knowledge.
+                    Turn your thoughts into searchable knowledge.
                   </p>
                 </div>
-
               </div>
-
 
               <input
                 type="text"
                 placeholder="Give your note a meaningful title..."
                 value={title}
-                onChange={(event) =>
-                  setTitle(event.target.value)
-                }
+                onChange={(event) => setTitle(event.target.value)}
               />
-
 
               <select
                 value={selectedSubjectId}
                 onChange={(event) =>
-                  setSelectedSubjectId(
-                    event.target.value
-                  )
+                  setSelectedSubjectId(event.target.value)
                 }
               >
-                <option value="">
-                  Choose a subject
-                </option>
+                <option value="">Choose a subject</option>
 
                 {subjects.map((subject) => (
-                  <option
-                    key={subject.id}
-                    value={subject.id}
-                  >
+                  <option key={subject.id} value={subject.id}>
                     {subject.name}
                   </option>
                 ))}
               </select>
 
-
               <textarea
                 placeholder="Start writing your knowledge..."
                 value={content}
-                onChange={(event) =>
-                  setContent(event.target.value)
-                }
+                onChange={(event) => setContent(event.target.value)}
               />
 
-
               <div className="editor-footer">
+                <span>Your note will be saved securely.</span>
 
-                <span>
-                  Your note will be saved securely.
-                </span>
+                <div style={{ display: 'flex', gap: '10px' }}>
+                  {editingId && (
+                    <button
+                      type="button"
+                      className="secondary-button"
+                      onClick={resetNoteForm}
+                    >
+                      Cancel
+                    </button>
+                  )}
 
-                <button
-                  className="save-button"
-                  onClick={
-                    editingId
-                      ? updateNote
-                      : addNote
-                  }
-                >
-                  {editingId
-                    ? '✓ Update note'
-                    : 'Save note →'}
-                </button>
-
+                  <button
+                    className="save-button"
+                    onClick={editingId ? updateNote : addNote}
+                  >
+                    {editingId ? '✓ Update note' : 'Save note →'}
+                  </button>
+                </div>
               </div>
-
             </section>
 
-
             <section className="notes-list">
-
               <div className="notes-list-header">
-
                 <div>
-                  <span>
-                    YOUR KNOWLEDGE
-                  </span>
-
-                  <h2>
-                    Recent notes
-                  </h2>
+                  <span>YOUR KNOWLEDGE</span>
+                  <h2>Recent notes</h2>
                 </div>
 
                 <span className="notes-count">
-                  {notes.length}{' '}
-                  {notes.length === 1
-                    ? 'note'
-                    : 'notes'}
+                  {notes.length} {notes.length === 1 ? 'note' : 'notes'}
                 </span>
-
               </div>
 
-
               {notes.length === 0 ? (
-
                 <div className="empty-notes">
-
-                  <div className="empty-icon">
-                    ✎
-                  </div>
-
-                  <h3>
-                    Your knowledge starts here
-                  </h3>
-
+                  <div className="empty-icon">✎</div>
+                  <h3>Your knowledge starts here</h3>
                   <p>
-                    Create your first note and begin
-                    building your Second Brain.
+                    Create your first note and begin building your Second
+                    Brain.
                   </p>
-
                 </div>
-
               ) : (
-
                 <div className="notes-grid">
-
                   {notes.map((note) => (
-
-                    <article
-                      className="note-card"
-                      key={note.id}
-                    >
-
-                      <div className="note-card-accent"></div>
+                    <article className="note-card" key={note.id}>
+                      <div className="note-card-accent" />
 
                       <div className="note-card-top">
-
-                        <div className="note-card-icon">
-                          ✎
-                        </div>
+                        <div className="note-card-icon">✎</div>
 
                         <div className="note-actions">
-
                           <button
                             className="edit-button"
+                            title="Edit note"
                             onClick={() => {
                               setEditingId(note.id)
                               setTitle(note.title)
-                              setSelectedSubjectId(
-                                note.subject_id || ''
-                              )
+                              setSelectedSubjectId(note.subject_id || '')
                               setContent(note.content)
+                              window.scrollTo({ top: 0, behavior: 'smooth' })
                             }}
                           >
                             ✎
@@ -912,38 +687,24 @@ if (!user) {
 
                           <button
                             className="delete-button"
-                            onClick={() =>
-                              deleteNote(note.id)
-                            }
+                            title="Delete note"
+                            onClick={() => deleteNote(note.id)}
                           >
                             ×
                           </button>
-
                         </div>
-
                       </div>
 
-
-                      <h3>
-                        {note.title}
-                      </h3>
-
-
-                      <p>
-                        {note.content}
-                      </p>
-
+                      <h3>{note.title}</h3>
+                      <p>{note.content}</p>
 
                       <div className="note-card-footer">
-
                         {note.subject_id ? (
                           <span className="note-subject">
                             ▦{' '}
                             {
                               subjects.find(
-                                (subject) =>
-                                  subject.id ===
-                                  note.subject_id
+                                (subject) => subject.id === note.subject_id
                               )?.name
                             }
                           </span>
@@ -952,27 +713,18 @@ if (!user) {
                             General note
                           </span>
                         )}
-
                       </div>
-
                     </article>
-
                   ))}
-
                 </div>
-
               )}
-
             </section>
-
           </main>
         )}
-
 
         {/* ================================= */}
         {/* OTHER PAGES */}
         {/* ================================= */}
-
         {page === 'subjects' && (
           <div className="page-wrapper">
             <Subjects />
@@ -990,9 +742,7 @@ if (!user) {
             <AIAssistant />
           </div>
         )}
-
       </div>
-
     </div>
   )
 }

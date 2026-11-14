@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react'
 import { supabase } from './supabaseClient'
 
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000'
+
 function AIAssistant() {
     const [documents, setDocuments] = useState([])
     const [question, setQuestion] = useState('')
@@ -18,7 +20,7 @@ function AIAssistant() {
             .order('created_at', { ascending: false })
 
         if (error) {
-            alert(error.message)
+            console.error('Document loading error:', error)
             return
         }
 
@@ -26,7 +28,7 @@ function AIAssistant() {
     }
 
     async function askAI() {
-        if (question.trim() === '') {
+        if (!question.trim()) {
             alert('Please enter a question.')
             return
         }
@@ -44,7 +46,7 @@ function AIAssistant() {
             }
 
             const response = await fetch(
-                `${import.meta.env.VITE_API_URL}/api/ai/search`,
+                `${API_URL}/api/ai/search`,
                 {
                     method: 'POST',
                     headers: {
@@ -57,11 +59,19 @@ function AIAssistant() {
                 }
             )
 
-            const data = await response.json()
+            let data = {}
+
+            try {
+                data = await response.json()
+            } catch {
+                // Some server errors may not return JSON.
+            }
 
             if (!response.ok) {
                 throw new Error(
-                    data.error || 'AI request failed.'
+                    data.error ||
+                    data.detail ||
+                    'AI request failed. Please try again.'
                 )
             }
 
@@ -79,17 +89,35 @@ function AIAssistant() {
         }
     }
 
+    function formatBoldText(text) {
+        const parts = text.split('**')
+
+        return parts.map((part, index) => {
+            if (index % 2 === 1) {
+                return (
+                    <strong key={index}>
+                        {part}
+                    </strong>
+                )
+            }
+
+            return (
+                <span key={index}>
+                    {part}
+                </span>
+            )
+        })
+    }
+
     function formatAnswer(text) {
         if (!text) {
             return null
         }
 
-        const lines = text.split('\n')
-
-        return lines.map((line, index) => {
+        return text.split('\n').map((line, index) => {
             const trimmedLine = line.trim()
 
-            if (trimmedLine === '') {
+            if (!trimmedLine) {
                 return (
                     <div
                         key={index}
@@ -141,53 +169,32 @@ function AIAssistant() {
                 )
             }
 
-            if (/^\d+\.\s/.test(trimmedLine)) {
-                const match = trimmedLine.match(
-                    /^(\d+)\.\s(.+)/
+            const numberedMatch =
+                trimmedLine.match(/^(\d+)\.\s+(.+)/)
+
+            if (numberedMatch) {
+                return (
+                    <div
+                        key={index}
+                        className="answer-number"
+                    >
+                        <strong>
+                            {numberedMatch[1]}.
+                        </strong>
+
+                        <span>
+                            {formatBoldText(
+                                numberedMatch[2]
+                            )}
+                        </span>
+                    </div>
                 )
-
-                if (match) {
-                    return (
-                        <div
-                            key={index}
-                            className="answer-number"
-                        >
-                            <strong>
-                                {match[1]}.
-                            </strong>
-
-                            <span>
-                                {formatBoldText(match[2])}
-                            </span>
-                        </div>
-                    )
-                }
             }
 
             return (
                 <p key={index}>
                     {formatBoldText(trimmedLine)}
                 </p>
-            )
-        })
-    }
-
-    function formatBoldText(text) {
-        const parts = text.split('**')
-
-        return parts.map((part, index) => {
-            if (index % 2 === 1) {
-                return (
-                    <strong key={index}>
-                        {part}
-                    </strong>
-                )
-            }
-
-            return (
-                <span key={index}>
-                    {part}
-                </span>
             )
         })
     }
