@@ -1,55 +1,93 @@
 # 🧠 Student Second Brain
 
-A personal knowledge and study management platform designed to help students organize and manage their academic information in one place.
+**Student Second Brain** is a web-based study and knowledge management platform designed to help students organize their academic information in one convenient place.
+
+🔗 **Live Demo:** https://studentsecondbrain-1.onrender.com/  
+💻 **Repository:** https://github.com/preetcks36/StudentSecondBrain
+
+---
 
 ## 📌 Project Overview
 
-Student Second Brain is a web-based application created to support students in organizing their study-related information and building a more structured learning workflow.
+Managing notes, subjects, documents, and study resources can become difficult when information is scattered across multiple platforms. Student Second Brain provides a centralized workspace where students can organize and manage their academic information more efficiently.
+
+The project focuses on creating a simple and user-friendly digital environment to support a more structured learning workflow.
+
+---
 
 ## ✨ Features
 
-- Organize and manage study information
-- Create and store notes
-- User-friendly web interface
-- Database integration for managing application data
+- 📝 Create and manage study notes
+- 📚 Organize academic information by subject
+- 📄 Manage documents and learning resources
+- 🔐 User authentication and account management
+- 🗄️ Database integration for storing application data
+- 💻 Responsive and user-friendly interface
+
+---
 
 ## 🛠️ Technologies Used
 
-- React
-- JavaScript
-- Vite
-- Supabase
-- HTML
-- CSS
-- Git & GitHub
+| Technology | Purpose |
+|---|---|
+| React | Frontend user interface |
+| JavaScript | Application logic |
+| Vite | Frontend development and build tool |
+| Supabase | Database and authentication |
+| HTML & CSS | Structure and styling |
+| Git & GitHub | Version control and project hosting |
+
+---
 
 ## 🚀 Getting Started
 
-To run this project locally:
+### 1. Clone the repository
 
-1. Clone the repository.
-2. Navigate to the `frontend` folder.
-3. Install the required dependencies.
-4. Start the development server.
+```bash
+git clone https://github.com/preetcks36/StudentSecondBrain.git
+```
+
+### 2. Navigate to the frontend folder
+
+```bash
+cd StudentSecondBrain/frontend
+```
+
+### 3. Install dependencies
 
 ```bash
 npm install
+```
+
+### 4. Start the development server
+
+```bash
 npm run dev
 ```
 
+Open the local URL displayed in your terminal to view the application.
+
+---
+
 ## 🎯 Project Status
 
-The project is currently functional and under continuous development. Additional features and improvements may be added in future versions.
+The project is functional and deployed online. It is currently under continuous development, with additional improvements and features planned for future versions.
+
+---
 
 ## 🔮 Future Improvements
 
-- Enhanced study organization features
-- Improved search functionality
-- Document and resource management
-- AI-powered learning assistance
-- Personalized study support
+- 🔍 Enhanced search and organization features
+- 📂 Improved document and resource management
+- 🤖 AI-powered learning assistance
+- 📊 Personalized study support and productivity features
+- 📱 Further improvements to responsiveness and user experience
+
+---
 
 ## 👩‍💻 Author
 
 **Gurpreet Kaur**  
 BCA Final-Year Student | Aspiring Cybersecurity & IT Professional
+
+🔗 LinkedIn: linkedin.com/in/gurpreet-kaur-1bb735364
