@@ -1378,3 +1378,11 @@ select:focus-visible {
         grid-template-columns: 1fr;
     }
 }
+.verification-box {
+  text-align: center;
+}
+
+.verification-box .login-logo {
+  font-size: 48px;
+  margin-bottom: 16px;
+}

@@ -13,6 +13,7 @@ function App() {
   const [user, setUser] = useState(null)
   const [isPasswordRecovery, setIsPasswordRecovery] = useState(false)
   const [authReady, setAuthReady] = useState(false)
+  const [emailVerified, setEmailVerified] = useState(false)
 
   const [notes, setNotes] = useState([])
   const [subjects, setSubjects] = useState([])
@@ -25,6 +26,10 @@ function App() {
 
   useEffect(() => {
     let active = true
+
+    const isEmailConfirmation =
+      window.location.hash.includes('access_token') &&
+      window.location.hash.includes('type=signup')
 
     const {
       data: { subscription },
@@ -41,10 +46,22 @@ function App() {
         event === 'TOKEN_REFRESHED'
       ) {
         setUser(session?.user ?? null)
+
+        if (event === 'SIGNED_IN' && isEmailConfirmation) {
+          setEmailVerified(true)
+
+          window.history.replaceState(
+            {},
+            document.title,
+            window.location.pathname
+          )
+        }
+
         setAuthReady(true)
       } else if (event === 'SIGNED_OUT') {
         setUser(null)
         setIsPasswordRecovery(false)
+        setEmailVerified(false)
         setAuthReady(true)
       }
     })
@@ -202,10 +219,12 @@ function App() {
   function navigate(target) {
     setPage(target)
     setSidebarOpen(false)
+
     if (target === 'dashboard') {
       loadDocumentCount()
       loadSubjects()
     }
+
     window.scrollTo({
       top: 0,
       behavior: 'smooth',
@@ -231,20 +250,42 @@ function App() {
     return <Login />
   }
 
+  if (emailVerified) {
+    return (
+      <div className="login-page">
+        <div className="login-box verification-box">
+          <div className="login-logo">✓</div>
+
+          <h1>Email verified successfully!</h1>
+
+          <p>
+            Your account is confirmed and your personal
+            knowledge space is ready.
+          </p>
+
+          <button
+            onClick={() => {
+              setEmailVerified(false)
+              setPage('dashboard')
+            }}
+          >
+            Continue to Dashboard →
+          </button>
+        </div>
+      </div>
+    )
+  }
+
   const userName =
     user.email?.split('@')[0] || 'Student'
 
   return (
     <div className="app">
-      {/* Mobile Sidebar Backdrop */}
       <div
         className={`sidebar-backdrop ${sidebarOpen ? 'open' : ''}`}
         onClick={() => setSidebarOpen(false)}
       />
 
-      {/* ================================= */}
-      {/* SIDEBAR */}
-      {/* ================================= */}
       <aside className={`sidebar ${sidebarOpen ? 'open' : ''}`}>
         <div className="brand">
           <div className="brand-icon">🧠</div>
@@ -329,11 +370,7 @@ function App() {
         </div>
       </aside>
 
-      {/* ================================= */}
-      {/* MAIN AREA */}
-      {/* ================================= */}
       <div className="main-area">
-        {/* Top bar */}
         <header className="topbar">
           <button
             className="mobile-menu-btn"
@@ -355,9 +392,6 @@ function App() {
           </div>
         </header>
 
-        {/* ================================= */}
-        {/* DASHBOARD */}
-        {/* ================================= */}
         {page === 'dashboard' && (
           <main className="dashboard">
             <section className="hero">
@@ -413,7 +447,6 @@ function App() {
               </div>
             </section>
 
-            {/* Stats */}
             <section className="stats-grid">
               <div
                 className="stat-card ai-stat"
@@ -464,7 +497,6 @@ function App() {
               </div>
             </section>
 
-            {/* AI Hero Card */}
             <section
               className="ai-hero-card"
               onClick={() => navigate('ai')}
@@ -495,7 +527,6 @@ function App() {
               <div className="ai-hero-symbol">✦</div>
             </section>
 
-            {/* Quick access */}
             <section className="dashboard-section">
               <div className="section-heading">
                 <div>
@@ -545,9 +576,6 @@ function App() {
           </main>
         )}
 
-        {/* ================================= */}
-        {/* NOTES */}
-        {/* ================================= */}
         {page === 'notes' && (
           <main className="notes-page">
             <button
@@ -679,7 +707,10 @@ function App() {
                               setTitle(note.title)
                               setSelectedSubjectId(note.subject_id || '')
                               setContent(note.content)
-                              window.scrollTo({ top: 0, behavior: 'smooth' })
+                              window.scrollTo({
+                                top: 0,
+                                behavior: 'smooth',
+                              })
                             }}
                           >
                             ✎
@@ -704,7 +735,8 @@ function App() {
                             ▦{' '}
                             {
                               subjects.find(
-                                (subject) => subject.id === note.subject_id
+                                (subject) =>
+                                  subject.id === note.subject_id
                               )?.name
                             }
                           </span>
@@ -722,9 +754,6 @@ function App() {
           </main>
         )}
 
-        {/* ================================= */}
-        {/* OTHER PAGES */}
-        {/* ================================= */}
         {page === 'subjects' && (
           <div className="page-wrapper">
             <Subjects />
