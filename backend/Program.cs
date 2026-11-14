@@ -8,8 +8,6 @@ var builder = WebApplication.CreateBuilder(args);
 // CONFIGURATION
 // =====================================================
 
-// User Secrets work locally.
-// Environment Variables work when deployed.
 builder.Configuration.AddUserSecrets<Program>();
 
 var supabaseUrl = builder.Configuration["Supabase:Url"];
@@ -72,86 +70,7 @@ app.MapGet("/", () =>
 
 
 // =====================================================
-// CONFIGURATION TEST
-// =====================================================
-
-app.MapGet("/api/config-test", () =>
-{
-    return Results.Ok(new
-    {
-        message = "Backend configuration loaded successfully."
-    });
-});
-
-
-// =====================================================
-// GROQ AI TEST
-// =====================================================
-
-app.MapGet("/api/ai/test", async (
-    IHttpClientFactory httpClientFactory) =>
-{
-    try
-    {
-        var client = httpClientFactory.CreateClient();
-
-        var groqRequest = new
-        {
-            model = groqModel,
-            messages = new[]
-            {
-                new
-                {
-                    role = "user",
-                    content = "Say hello to Student Second Brain in one sentence."
-                }
-            }
-        };
-
-        using var request = new HttpRequestMessage(
-            HttpMethod.Post,
-            "https://api.groq.com/openai/v1/chat/completions"
-        );
-
-        request.Headers.Authorization =
-            new AuthenticationHeaderValue("Bearer", groqApiKey);
-
-        request.Content = JsonContent.Create(groqRequest);
-
-        var response = await client.SendAsync(request);
-
-        if (!response.IsSuccessStatusCode)
-        {
-            var errorText = await response.Content.ReadAsStringAsync();
-
-            return Results.Problem(
-                "Groq request failed: " + errorText,
-                statusCode: (int)response.StatusCode
-            );
-        }
-
-        var result =
-            await response.Content
-                .ReadFromJsonAsync<GroqChatResponse>();
-
-        var reply =
-            result?.Choices?.FirstOrDefault()?.Message?.Content
-            ?? "No response generated.";
-
-        return Results.Ok(new { response = reply });
-    }
-    catch (Exception ex)
-    {
-        return Results.Problem(
-            "AI test failed: " + ex.Message,
-            statusCode: 500
-        );
-    }
-});
-
-
-// =====================================================
-// AI SEARCH + RAG
+// AI SEARCH + RAG + LIVE WEB SEARCH
 // =====================================================
 
 app.MapPost("/api/ai/search", async (
@@ -169,7 +88,6 @@ app.MapPost("/api/ai/search", async (
                 error = "Question is required."
             });
         }
-
 
         // Get Supabase user access token
         var authorizationHeader =
@@ -190,10 +108,10 @@ app.MapPost("/api/ai/search", async (
         }
 
         var client = httpClientFactory.CreateClient();
-
+        var matches = new List<DocumentMatch>();
 
         // =================================================
-        // 1. GENERATE QUESTION EMBEDDING
+        // 1. GENERATE QUESTION EMBEDDING (NON-BLOCKING FALLBACK)
         // =================================================
 
         var embeddingRequest = new
@@ -208,143 +126,96 @@ app.MapPost("/api/ai/search", async (
             );
 
         embeddingHttpRequest.Headers.Add("apikey", supabaseKey);
-
         embeddingHttpRequest.Headers.Authorization =
-            new AuthenticationHeaderValue(
-                "Bearer",
-                accessToken
-            );
-
+            new AuthenticationHeaderValue("Bearer", accessToken);
         embeddingHttpRequest.Content =
             JsonContent.Create(embeddingRequest);
 
         var embeddingResponse =
             await client.SendAsync(embeddingHttpRequest);
 
-        if (!embeddingResponse.IsSuccessStatusCode)
+        if (embeddingResponse.IsSuccessStatusCode)
         {
-            var errorText =
-                await embeddingResponse.Content.ReadAsStringAsync();
+            var embeddingResult =
+                await embeddingResponse.Content
+                    .ReadFromJsonAsync<EmbeddingResponse>();
 
-            return Results.Problem(
-                "Embedding request failed: " + errorText,
-                statusCode: (int)embeddingResponse.StatusCode
-            );
+            // =================================================
+            // 2. SEARCH DOCUMENT CHUNKS
+            // =================================================
+
+            if (embeddingResult?.Embedding != null &&
+                embeddingResult.Embedding.Length > 0)
+            {
+                var searchBody = new
+                {
+                    query_embedding = embeddingResult.Embedding,
+                    match_threshold = 0.15,
+                    match_count = 5
+                };
+
+                using var searchHttpRequest =
+                    new HttpRequestMessage(
+                        HttpMethod.Post,
+                        $"{supabaseUrl.TrimEnd('/')}/rest/v1/rpc/match_document_chunks"
+                    );
+
+                searchHttpRequest.Headers.Add("apikey", supabaseKey);
+                searchHttpRequest.Headers.Authorization =
+                    new AuthenticationHeaderValue("Bearer", accessToken);
+                searchHttpRequest.Content =
+                    JsonContent.Create(searchBody);
+
+                var searchResponse =
+                    await client.SendAsync(searchHttpRequest);
+
+                if (searchResponse.IsSuccessStatusCode)
+                {
+                    matches =
+                        await searchResponse.Content
+                            .ReadFromJsonAsync<List<DocumentMatch>>()
+                        ?? new List<DocumentMatch>();
+                }
+            }
         }
 
-        var embeddingResult =
-            await embeddingResponse.Content
-                .ReadFromJsonAsync<EmbeddingResponse>();
-
-        if (embeddingResult?.Embedding == null ||
-            embeddingResult.Embedding.Length == 0)
-        {
-            return Results.Problem(
-                "No embedding was returned.",
-                statusCode: 500
-            );
-        }
-
-
         // =================================================
-        // 2. SEARCH DOCUMENT CHUNKS
-        // =================================================
-
-        var searchBody = new
-        {
-            query_embedding = embeddingResult.Embedding,
-            match_threshold = 0.2,
-            match_count = 5
-        };
-
-        using var searchHttpRequest =
-            new HttpRequestMessage(
-                HttpMethod.Post,
-                $"{supabaseUrl.TrimEnd('/')}/rest/v1/rpc/match_document_chunks"
-            );
-
-        searchHttpRequest.Headers.Add("apikey", supabaseKey);
-
-        searchHttpRequest.Headers.Authorization =
-            new AuthenticationHeaderValue(
-                "Bearer",
-                accessToken
-            );
-
-        searchHttpRequest.Content =
-            JsonContent.Create(searchBody);
-
-        var searchResponse =
-            await client.SendAsync(searchHttpRequest);
-
-        if (!searchResponse.IsSuccessStatusCode)
-        {
-            var errorText =
-                await searchResponse.Content.ReadAsStringAsync();
-
-            return Results.Problem(
-                "Semantic search failed: " + errorText,
-                statusCode: (int)searchResponse.StatusCode
-            );
-        }
-
-        var matches =
-            await searchResponse.Content
-                .ReadFromJsonAsync<List<DocumentMatch>>()
-            ?? new List<DocumentMatch>();
-
-
-        // =================================================
-        // 3. PREPARE STUDY MATERIAL
+        // 3. PREPARE STUDY MATERIAL CONTEXT
         // =================================================
 
         var context = string.Join(
             "\n\n--- DOCUMENT CHUNK ---\n\n",
             matches
                 .Select(match => match.Content)
-                .Where(content =>
-                    !string.IsNullOrWhiteSpace(content))
+                .Where(content => !string.IsNullOrWhiteSpace(content))
         );
 
-        // No matching study material found
-        if (string.IsNullOrWhiteSpace(context))
-        {
-            return Results.Ok(new
-            {
-                question = request.Question,
-                answer = "I couldn't find this information in your uploaded study material.",
-                matches
-            });
-        }
+        var hasStudyMaterial = !string.IsNullOrWhiteSpace(context);
 
+        var studyContextBlock = hasStudyMaterial
+            ? $"UPLOADED STUDY MATERIAL:\n{context}"
+            : "UPLOADED STUDY MATERIAL:\n(No matching excerpts found in uploaded files.)";
 
         // =================================================
-        // 4. CREATE AI PROMPT
+        // 4. CREATE HYBRID PROMPT (STUDY MATERIAL + WEB)
         // =================================================
 
         var prompt = $"""
-You are the AI assistant for Student Second Brain.
+You are the AI study assistant for Student Second Brain.
 
-Answer the user's question using ONLY the study material provided below.
-
-If the answer cannot be found in the study material, say exactly:
-
-"I couldn't find this information in your uploaded study material."
-
-Do not invent facts.
-
-Keep the answer clear, simple, and useful for a student.
+Help the student answer their question accurately and clearly:
+1. First, check the UPLOADED STUDY MATERIAL below. If it contains relevant notes, definitions, or question context, use and reference them.
+2. If the uploaded material only contains a question (such as a question bank) or does not contain the full answer, use the browser_search tool to search the internet and provide a complete, accurate, well-structured answer.
+3. Keep the explanation clear, student-friendly, and well-formatted with bullet points or numbered steps where appropriate.
 
 USER QUESTION:
 {request.Question}
 
-STUDY MATERIAL:
-{context}
+{studyContextBlock}
 """;
 
-
         // =================================================
-        // 5. SEND REQUEST TO GROQ
+        // 5. SEND REQUEST TO GROQ WITH LIVE BROWSER SEARCH
         // =================================================
 
         var groqRequest = new
@@ -357,7 +228,15 @@ STUDY MATERIAL:
                     role = "user",
                     content = prompt
                 }
-            }
+            },
+            tools = new[]
+            {
+                new
+                {
+                    type = "browser_search"
+                }
+            },
+            tool_choice = "auto"
         };
 
         using var groqHttpRequest =
@@ -367,11 +246,7 @@ STUDY MATERIAL:
             );
 
         groqHttpRequest.Headers.Authorization =
-            new AuthenticationHeaderValue(
-                "Bearer",
-                groqApiKey
-            );
-
+            new AuthenticationHeaderValue("Bearer", groqApiKey);
         groqHttpRequest.Content =
             JsonContent.Create(groqRequest);
 
@@ -389,9 +264,8 @@ STUDY MATERIAL:
             );
         }
 
-
         // =================================================
-        // 6. READ AI ANSWER
+        // 6. READ AI ANSWER & RETURN RESPONSE
         // =================================================
 
         var groqResult =
@@ -405,15 +279,11 @@ STUDY MATERIAL:
                 .Content
             ?? "No answer generated.";
 
-
-        // =================================================
-        // 7. RETURN RESPONSE
-        // =================================================
-
         return Results.Ok(new
         {
             question = request.Question,
             answer = answerText,
+            sourceType = hasStudyMaterial ? "hybrid" : "web",
             matches
         });
     }
