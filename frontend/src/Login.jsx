@@ -68,6 +68,9 @@ function Login() {
     const { data, error } = await supabase.auth.signUp({
       email: email.trim(),
       password: password,
+      options: {
+        emailRedirectTo: window.location.origin,
+      },
     })
 
     setLoading(false)
